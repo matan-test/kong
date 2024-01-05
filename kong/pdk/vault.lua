@@ -16,21 +16,21 @@ local lrucache = require "resty.lrucache"
 local isempty = require "table.isempty"
 local buffer = require "string.buffer"
 local clone = require "table.clone"
-local utils = require "kong.tools.utils"
 local cjson = require("cjson.safe").new()
 
 
-local yield = utils.yield
-local get_updated_now_ms = utils.get_updated_now_ms
+local yield = require("kong.tools.yield").yield
+local get_updated_now_ms = require("kong.tools.time").get_updated_now_ms
+local replace_dashes = require("kong.tools.string").replace_dashes
 
 
 local ngx = ngx
 local get_phase = ngx.get_phase
 local max = math.max
+local min = math.min
 local fmt = string.format
 local sub = string.sub
 local byte = string.byte
-local gsub = string.gsub
 local type = type
 local sort = table.sort
 local pcall = pcall
@@ -539,7 +539,7 @@ local function new(self)
       base_config = {}
       if self and self.configuration then
         local configuration = self.configuration
-        local env_name = gsub(name, "-", "_")
+        local env_name = replace_dashes(name)
         local _, err, schema = get_vault_strategy_and_schema(name)
         if not schema then
           return nil, err
@@ -553,7 +553,7 @@ local function new(self)
           -- then you would configure it with KONG_VAULT_MY_VAULT_<setting>
           -- or in kong.conf, where it would be called
           -- "vault_my_vault_<setting>".
-          local n = lower(fmt("vault_%s_%s", env_name, gsub(k, "-", "_")))
+          local n = lower(fmt("vault_%s_%s", env_name, replace_dashes(k)))
           local v = configuration[n]
           v = arguments.infer_value(v, f)
           -- TODO: should we be more visible with validation errors?
@@ -742,26 +742,36 @@ local function new(self)
   -- Function `get_cache_value_and_ttl` returns a value for caching and its ttl
   --
   -- @local
-  -- @function get_from_vault
+  -- @function get_cache_value_and_ttl
   -- @tparam string value the vault returned value for a reference
   -- @tparam table config the configuration settings to be used
   -- @tparam[opt] number ttl the possible vault returned ttl
   -- @treturn string value to be stored in shared dictionary
   -- @treturn number shared dictionary ttl
   -- @treturn number lru ttl
-  -- @usage local value, err = get_from_vault(reference, strategy, config, cache_key, parsed_reference)
+  -- @usage local cache_value, shdict_ttl, lru_ttl = get_cache_value_and_ttl(value, config, ttl)
   local function get_cache_value_and_ttl(value, config, ttl)
     local cache_value, shdict_ttl, lru_ttl
     if value then
-      -- adjust ttl to the minimum and maximum values configured
-      lru_ttl = adjust_ttl(ttl, config)
-      shdict_ttl = max(lru_ttl + (config.resurrect_ttl or DAO_MAX_TTL), SECRETS_CACHE_MIN_TTL)
       cache_value = value
 
+      -- adjust ttl to the minimum and maximum values configured
+      ttl = adjust_ttl(ttl, config)
+
+      if config.resurrect_ttl then
+        lru_ttl = min(ttl + config.resurrect_ttl, DAO_MAX_TTL)
+        shdict_ttl = max(lru_ttl, SECRETS_CACHE_MIN_TTL)
+
+      else
+        lru_ttl = ttl
+        shdict_ttl = DAO_MAX_TTL
+      end
+
     else
+      cache_value = NEGATIVELY_CACHED_VALUE
+
       -- negatively cached values will be rotated on each rotation interval
       shdict_ttl = max(config.neg_ttl or 0, SECRETS_CACHE_MIN_TTL)
-      cache_value = NEGATIVELY_CACHED_VALUE
     end
 
     return cache_value, shdict_ttl, lru_ttl
@@ -794,14 +804,13 @@ local function new(self)
       return nil, cache_err
     end
 
-    if not value then
-      LRU:delete(reference)
+    if cache_value == NEGATIVELY_CACHED_VALUE then
       return nil, fmt("could not get value from external vault (%s)", err)
     end
 
-    LRU:set(reference, value, lru_ttl)
+    LRU:set(reference, cache_value, lru_ttl)
 
-    return value
+    return cache_value
   end
 
 
@@ -823,8 +832,7 @@ local function new(self)
   -- @usage
   -- local value, err = get(reference, cache_only)
   local function get(reference, cache_only)
-    -- the LRU stale value is ignored as the resurrection logic
-    -- is deferred to the shared dictionary
+    -- the LRU stale value is ignored
     local value = LRU:get(reference)
     if value then
       return value
@@ -1359,8 +1367,8 @@ local function new(self)
       return nil, cache_err
     end
 
-    if value then
-      LRU:set(reference, value, lru_ttl)
+    if cache_value ~= NEGATIVELY_CACHED_VALUE then
+      LRU:set(reference, cache_value, lru_ttl)
     end
 
     return true
@@ -1561,6 +1569,28 @@ local function new(self)
   -- @function kong.vault.init_worker
   function _VAULT.init_worker()
     init_worker()
+  end
+
+  ---
+  -- Warmups vault caches from config.
+  --
+  -- @local
+  -- @function kong.vault.warmup
+  function _VAULT.warmup(input)
+    for k, v in pairs(input) do
+      local kt = type(k)
+      if kt == "table" then
+        _VAULT.warmup(k)
+      elseif kt == "string" and is_reference(k) then
+        get(k)
+      end
+      local vt = type(v)
+      if vt == "table" then
+        _VAULT.warmup(v)
+      elseif vt == "string" and is_reference(v) then
+        get(v)
+      end
+    end
   end
 
   if get_phase() == "init" then
