@@ -277,7 +277,7 @@ def _kong_install_impl(ctx):
             path = "/".join(file.short_path.split("/")[1:])
 
         # skip foreign_cc generated copy_* targets
-        if path.startswith(ctx.attr.src.label.workspace_name + "/copy_"):
+        if path.startswith(ctx.attr.src.label.workspace_name + "/copy_" + ctx.attr.src.label.name):
             continue
 
         # only replace the first one
