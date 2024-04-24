@@ -68,7 +68,6 @@ _kong_template_attrs = {
 def _render_template(ctx, output):
     substitutions = dict(ctx.attr.substitutions)
     for l in ctx.attr.srcs + ctx.attr.tools:
-        any_file = l.files.to_list()[0]
         if OutputGroupInfo in l and "gen_dir" in l[OutputGroupInfo]:  # usualy it's foreign_cc target
             p = l[OutputGroupInfo].gen_dir.to_list()[0].path
         else:  # otherwise it's usually output from gen_rule, file_group etc
