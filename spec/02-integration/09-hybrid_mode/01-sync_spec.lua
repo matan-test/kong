@@ -6,6 +6,7 @@ local MAJOR = _VERSION_TABLE.major
 local MINOR = _VERSION_TABLE.minor
 local PATCH = _VERSION_TABLE.patch
 local CLUSTERING_SYNC_STATUS = require("kong.constants").CLUSTERING_SYNC_STATUS
+local uuid = require("kong.tools.uuid").uuid
 
 
 local KEY_AUTH_PLUGIN
@@ -479,7 +480,7 @@ describe("CP/DP #version check #" .. strategy, function()
 
     for desc, harness in pairs(allowed_cases) do
       it(desc .. ", sync is allowed", function()
-        local uuid = utils.uuid()
+        local uuid = uuid()
 
         local res = assert(helpers.clustering_client({
           host = "127.0.0.1",
@@ -566,7 +567,7 @@ describe("CP/DP #version check #" .. strategy, function()
 
     for desc, harness in pairs(blocked_cases) do
       it(desc ..", sync is blocked", function()
-        local uuid = utils.uuid()
+        local uuid = uuid()
 
         local res, err = helpers.clustering_client({
           host = "127.0.0.1",

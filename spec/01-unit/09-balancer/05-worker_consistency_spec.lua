@@ -1,8 +1,8 @@
-local utils = require "kong.tools.utils"
+local utils = require "kong.tools.table"
 local mocker = require "spec.fixtures.mocker"
 
 
-local ws_id = utils.uuid()
+local ws_id = require("kong.tools.uuid").uuid()
 
 
 local function setup_it_block(consistency)

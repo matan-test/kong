@@ -3,6 +3,7 @@ local declarative = require "kong.db.declarative"
 local helpers = require "spec.helpers"
 local utils = require "kong.tools.utils"
 local https_server = require "spec.fixtures.https_server"
+local uuid = require("kong.tools.uuid").uuid
 
 
 local CONSISTENCY_FREQ = 1
@@ -227,7 +228,7 @@ do
   end
 
   add_certificate = function(bp, data)
-    local certificate_id = utils.uuid()
+    local certificate_id = uuid()
     local req = utils.cycle_aware_deep_copy(data) or {}
     req.id = certificate_id
     bp.certificates:insert(req)
@@ -235,7 +236,7 @@ do
   end
 
   add_upstream = function(bp, data)
-    local upstream_id = utils.uuid()
+    local upstream_id = uuid()
     local req = utils.cycle_aware_deep_copy(data) or {}
     local upstream_name = req.name or gen_sym("upstream")
     req.name = upstream_name
@@ -335,8 +336,8 @@ do
 
   add_api = function(bp, upstream_name, opts)
     opts = opts or {}
-    local route_id = utils.uuid()
-    local service_id = utils.uuid()
+    local route_id = uuid()
+    local service_id = uuid()
     local route_host = gen_sym("host")
     local sproto = opts.service_protocol or opts.route_protocol or "http"
     local rproto = opts.route_protocol or "http"
